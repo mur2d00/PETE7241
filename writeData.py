@@ -1,8 +1,6 @@
-from netCDF4 import Dataset
 import fluidfoam
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib
 import os
 import timeit
 
