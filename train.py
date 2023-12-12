@@ -7,12 +7,15 @@ from torch.autograd import Variable
 from matplotlib import pyplot as plt
 import matplotlib.animation as animation
 import torch.nn.functional as F
+import random
 
 # uA and vA are sediment phase x and y velocities
 # uB and vB are fluid phae x and y velocities
 #Alpha is sediment phase concentration
 #P is pressure
 # SedFoam outputs were saved at 0.1 seconds.
+
+# Link to the CFDdata.mat is available on github. 
 
 #use GPU if available
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -74,51 +77,108 @@ vA_train1 = vA[idx, :]
 uB_train1 = uB[idx, :]
 vB_train1 = vB[idx, :]
 P_train1 = P[idx, :]
-alphaA_train = alphaA[idx, :]
+alphaA_train1 = alphaA[idx, :]
+
+def randomizedData(*arrays):
+    # Assume all arrays are of the same length
+    num_elements = len(arrays[0])
+    
+    # Calculate the number of elements to keep (10%)
+    num_elements_to_keep = int(num_elements * 0.10)
+
+    # Randomly select the indices of the elements to keep
+    keep_indices = np.random.choice(num_elements, num_elements_to_keep, replace=False)
+
+    # Keep only the selected elements in each array
+    reduced_arrays = [array[keep_indices] for array in arrays]
+
+    return reduced_arrays
+
+def polar_to_cartesian(theta_values, radius):
+    # Convert degrees to radians
+    theta_radians = np.radians(theta_values)
+    
+    # Calculate x and y coordinates for each theta
+    x_Cyl = radius * np.cos(theta_radians)
+    y_Cyl = radius * np.sin(theta_radians)
+    
+    # Combine x and y coordinates into a single array
+    cartesian_coordinates = np.column_stack((x_Cyl, y_Cyl))
+    
+    return cartesian_coordinates
+
 # Boundary constraints
-inletIndicies = np.where(x == -0.75)
-xInlet = x[inletIndicies[0]]
-yInlet = y[inletIndicies[0]]
-tInlet = t[inletIndicies[0]]
-uAInlet = uA[inletIndicies[0]]
-vAInlet = vA[inletIndicies[0]]
-uBInlet = uB[inletIndicies[0]]
-vBInlet = vB[inletIndicies[0]]
-PInlet = P[inletIndicies[0]]
-alphaAInlet = alphaA[inletIndicies[0]]
 
-outletIndicies = np.where(x == 1)
-xOutlet = x[outletIndicies[0]]
-yOutlet = y[outletIndicies[0]]
-tOutlet = t[outletIndicies[0]]
-uAOutlet = uA[outletIndicies[0]]
-vAOutlet = vA[outletIndicies[0]]
-uBOutlet = uB[outletIndicies[0]]
-vBOutlet = vB[outletIndicies[0]]
-POutlet = P[outletIndicies[0]]
-alphaAOutlet = alphaA[outletIndicies[0]]
+inletIndicies1 = np.where(x == -0.75)
+inletIndicies = inletIndicies1[0]
+outletIndicies1 = np.where(x == 1)
+outletIndicies = outletIndicies1[0]
+surfaceIndicies1 = np.where(y == 0.205)
+surfaceIndicies = surfaceIndicies1[0]
+BottomIndicies1 = np.where(y == -0.1)
+BottomIndicies = BottomIndicies1[0]
+BottomIndicies1 = np.where(y == -0.1)
+BottomIndicies = BottomIndicies1[0]
 
+# Boundary values for inlet, outlet, etcc....
+xInlet, yInlet, tInlet, uAInlet, vAInlet, uBInlet, vBInlet, PInlet, alphaAInlet  = randomizedData(x[inletIndicies], y[inletIndicies], t[inletIndicies], uA[inletIndicies], vA[inletIndicies], uB[inletIndicies], vB[inletIndicies], P[inletIndicies], alphaA[inletIndicies])
+xOutlet, yOutlet, tOutlet, uAOutlet, vAOutlet, uBOutlet, vBOutlet, POutlet, alphaAOutlet = randomizedData(x[outletIndicies], y[outletIndicies], t[outletIndicies], uA[outletIndicies], vA[outletIndicies], uB[outletIndicies], vB[outletIndicies], P[outletIndicies], alphaA[outletIndicies])
+xSurface, ySurface, tSurface, uASurface, vASurface, uBSurface, vBSurface, PSurface, alphaASurface  = randomizedData(x[surfaceIndicies], y[surfaceIndicies], t[surfaceIndicies], uA[surfaceIndicies], vA[surfaceIndicies], uB[surfaceIndicies], vB[surfaceIndicies], P[surfaceIndicies], alphaA[surfaceIndicies])
+xBottom, yBottom, tBottom, uABottom, vABottom, uBBottom, vBBottom, PBottom, alphaABottom  = randomizedData(x[BottomIndicies], y[BottomIndicies], t[BottomIndicies], uA[BottomIndicies], vA[BottomIndicies], uB[BottomIndicies], vB[BottomIndicies], P[BottomIndicies], alphaA[BottomIndicies])
 
+# Create an array of 15 equally spaced theta values
+theta_values = np.linspace(0, 360, 45)  # Angles in degrees, ranging from 0 to 360
+radius = 0.025   # Radius
+coordinates = polar_to_cartesian(theta_values, radius)
+internalFieldCord = polar_to_cartesian(theta_values, 0.030)
+target_x, target_y = internalFieldCord[:, 0], internalFieldCord[:, 1]
+closest_alpha_values = []
+closest_P_values = []
+closest_T_values = []
 
-
+for i in range(len(target_x)):
+    # Calculate the Euclidean distances between the target point and all data points
+    distances = np.sqrt((x - target_x[i])**2 + (y - target_y[i])**2)
+    # Find the index of the closest data point
+    closest_index = np.argmin(distances)
+    # Get the closest z value and append it to the result array
+    closest_alpha = alphaA[closest_index]
+    closest_pressure = P[closest_index]
+    closest_T = t[closest_index]
+    closest_alpha_values.append(closest_alpha)
+    closest_P_values.append(closest_pressure)
+    closest_T_values.append(closest_T)
+# Save the Cartesian coordinates to an array
+x_Cyl = coordinates[:, 0].reshape(-1, 1)
+y_Cyl = coordinates[:, 1].reshape(-1, 1)
+alpha_Cyl = np.array(closest_alpha_values).reshape(-1, 1)
+uA_Cyl = np.zeros_like(x_Cyl).reshape(-1, 1)
+vA_Cyl = np.zeros_like(x_Cyl).reshape(-1, 1)
+uB_Cyl = np.zeros_like(x_Cyl).reshape(-1, 1)
+vB_Cyl = np.zeros_like(x_Cyl).reshape(-1, 1)
+P_Cyl = np.array(closest_P_values).reshape(-1, 1)
+T_Cyl = np.array(closest_T_values).reshape(-1, 1)
 
 # Create training data including boundary conditions
-x_train = np.vstack((xInlet, xOutlet, x_train1))
-y_train = np.vstack((yInlet, yOutlet,  y_train1))
-t_train = np.vstack((tInlet, tOutlet,  t_train1))
-uA_train = np.vstack((uAInlet, uAOutlet,  uA_train1))
-vA_train = np.vstack((vAInlet, vAOutlet,  vA_train1))
-uB_train = np.vstack((uBInlet, uBOutlet,  uB_train1))
-vB_train = np.vstack((vBInlet, vBOutlet,  vB_train1))
-P_train = np.vstack((PInlet, POutlet,  P_train1))
-alphaA_train = np.vstack((alphaAInlet, alphaAOutlet, alphaA_train))
+x_train = np.vstack((xInlet, xOutlet, x_Cyl, xSurface,xBottom, x_train1))
+y_train = np.vstack((yInlet, yOutlet, y_Cyl, ySurface, yBottom,  y_train1))
+t_train = np.vstack((tInlet, tOutlet, T_Cyl, tSurface, tBottom,  t_train1))
+uA_train = np.vstack((uAInlet, uAOutlet, uA_Cyl, uASurface, uABottom, uA_train1, ))
+vA_train = np.vstack((vAInlet, vAOutlet, vA_Cyl, vASurface, vABottom,  vA_train1))
+uB_train = np.vstack((uBInlet, uBOutlet, uB_Cyl, uBSurface, uBBottom,  uB_train1))
+vB_train = np.vstack((vBInlet, vBOutlet, vB_Cyl, vBSurface, vBBottom,  vB_train1))
+P_train = np.vstack((PInlet, POutlet, P_Cyl, PSurface, PBottom,  P_train1))
+alphaA_train = np.vstack((alphaAInlet, alphaAOutlet, alpha_Cyl, alphaASurface, alphaABottom, alphaA_train1))
 
 # Plot Training Points
-plt.scatter(x_train, y_train)
+plt.figure(figsize=(16, 9))
+plt.scatter(x_train, y_train, c=alphaA_train, cmap='viridis')
+plt.colorbar(label='Solid Phase Concentration')
 plt.xlabel('X')
 plt.ylabel('Y')
+plt.gca().set_aspect(1/1)
 plt.title('Training Points')
-plt.savefig('TrainPoints.png')
+plt.savefig('TrainPoints2.png', dpi=300)
 
 # convert to pytorch tensor
 x_train = Variable(torch.from_numpy(x_train).float(), requires_grad=True).to(device)
@@ -131,7 +191,7 @@ vB_train = Variable(torch.from_numpy(vB_train).float(), requires_grad=True).to(d
 P_train = Variable(torch.from_numpy(P_train).float(), requires_grad=True).to(device)
 alphaA_train = Variable(torch.from_numpy(alphaA_train).float(), requires_grad=True).to(device)
 
-#Create a NN model
+# #Create a NN model
 
 class PINN(nn.Module):
     def __init__(self):
@@ -275,9 +335,9 @@ def function (x, y, t, net):
     PDE_F_X = uB_t + (uBuB_x + uBvB_x) + (Beta) *  PxF_x +  (1-alphaA) + alphaA*(1-alphaA) * (uB-uA) * torch.norm(uB-uA, p='fro')*0.44*(rhoF/0.002) - Beta_x
     PDE_F_Y = vB_t + (uBvB_x + vBvB_y) + (Beta) *  PxF_y +  (1-alphaA) - 9.81 * rhoS * (1-alphaA) + alphaA*(1-alphaA) * (uB-uA) * torch.norm(uB-uA, p='fro')*0.44*(rhoF/0.002) -  Beta_y
 
-    return uA, vA, uB, vB, alphaA, PDE_S_X, PDE_S_Y,  PDE_F_X, PDE_F_Y, Cont_SX, Cont_SY, Cont_FX, Cont_FY      
+    return uA, vA, uB, vB, PTemp, alphaA, PDE_S_X, PDE_S_Y,  PDE_F_X, PDE_F_Y, Cont_SX, Cont_SY, Cont_FX, Cont_FY      
 
-zeros_train = np.zeros((40180,1))
+zeros_train = np.zeros((28025,1))
 zeros_train = torch.from_numpy(zeros_train).float().to(device)
 zeros_train.requires_grad = True
 
@@ -285,10 +345,10 @@ zeros_train.requires_grad = True
 
 losses = []
 # Train model
-iterations = 400000
+iterations = 1000000
 for epoch in range(iterations):
     optimizer.zero_grad()
-    uA_out, vA_out, uB_out, vB_out, AlphaA_out, PDE_S_X_out, PDE_S_Y_out, PDE_F_X_out, PDE_F_Y_out, Cont_SX, Cont_SY, Cont_FX, Cont_FY = function(x_train, y_train, t_train, net)
+    uA_out, vA_out, uB_out, vB_out, P_out, AlphaA_out, PDE_S_X_out, PDE_S_Y_out, PDE_F_X_out, PDE_F_Y_out, Cont_SX, Cont_SY, Cont_FX, Cont_FY = function(x_train, y_train, t_train, net)
     
     # cost function for the data
     mse_uA = mse_cost_function(uA_out, uA_train)
@@ -296,7 +356,9 @@ for epoch in range(iterations):
     mse_uB = mse_cost_function(uB_out, uB_train)
     mse_vB = mse_cost_function(vB_out, vB_train)
     mse_alphaA = mse_cost_function(AlphaA_out, alphaA_train)
-    
+    mse_P = mse_cost_function(P_out, P_train)
+
+
     # Cost function for momentum equation
     mse_PDE_S_X = mse_cost_function(PDE_S_X_out, zeros_train)
     mse_PDE_S_Y = mse_cost_function(PDE_S_Y_out, zeros_train)
@@ -309,7 +371,7 @@ for epoch in range(iterations):
     mse_Cont_FX = mse_cost_function(Cont_FX, zeros_train)
     mse_Cont_FY = mse_cost_function(Cont_FY, zeros_train)
     
-    loss = mse_uA + mse_vA + mse_uB + mse_vB + mse_PDE_S_X + mse_PDE_S_Y + mse_PDE_F_X + mse_PDE_F_Y + mse_Cont_SX + mse_Cont_SY + mse_Cont_FX + mse_Cont_FY + mse_alphaA
+    loss = mse_uA + mse_vA + mse_uB + mse_vB + mse_P + mse_alphaA + mse_PDE_S_X + mse_PDE_S_Y + mse_PDE_F_X + mse_PDE_F_Y + mse_Cont_SX + mse_Cont_SY + mse_Cont_FX + mse_Cont_FY + mse_alphaA
     loss.backward()
     optimizer.step()
     with torch.autograd.no_grad():
